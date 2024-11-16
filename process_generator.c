@@ -43,8 +43,8 @@ void generate_process(FILE *text_file, FILE *binary_file, int code_size, int dat
 int main() {
     srand(time(NULL));
 
-    FILE *text_file = fopen("p1.txt", "w");
-    FILE *binary_file = fopen("p1.proc", "wb");
+    FILE *text_file = fopen("p2.txt", "w");
+    FILE *binary_file = fopen("p2.proc", "wb");
     
 	if (text_file == NULL || binary_file == NULL) {
         perror("Failed to open file");
