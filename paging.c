@@ -77,30 +77,57 @@ void load_process(char* filename, int pagesize, PCB* proc, int framelist[], int 
     int numpages = (proc->procsize+pagesize-1)/pagesize; //pagesize-1 added to ensure partial pages are also catered
     printf("Number of pages: %d\n", numpages);
     proc->pagetable = malloc(sizeof(PTE)*numpages);
-    printf("Page table allocated\n");
+    // printf("Page table allocated\n");
 
     for(int i=0; i<numpages; i++){
         int frame = findframe(framelist,numframes);
-        printf("Found frame = %d\n",frame);
         if(frame == -1){
             printf("Error: No more physical frames left");
             break;
         }
         proc->pagetable[i].frame_num = frame;
-        // printf("Check print\n");
         proc->pagetable[i].valid=1;
-        //  printf("Check print\n");
         framelist[frame] = 0;
-        // printf("Check print\n");
     }
 
     //PRINT CHECKS
-    printf("Process id: %u\n", (unsigned int)procid);
-    printf("Code size: %u\n" ,(unsigned int)codesize);
-    printf("Process size : %u\n",(unsigned int)datasize);
+    // printf("Process id: %u\n", (unsigned int)procid);
+    // printf("Code size: %u\n" ,(unsigned int)codesize);
+    // printf("Process size : %u\n",(unsigned int)datasize);
     
 }
 
+void displayFreeFrames(int *framelist, int numFrames) {
+    printf("FREE FRAMES: ");
+    for (int i=0; i< numFrames; i++){
+        if(framelist[i] == 1) printf("%d ", i);
+    }
+    printf("\n");
+}
+
+//FUNCTION TO RETURN THE TOTAL FRAGMENTATION OF ALL PROCESSES COMBINED
+int calculateFragmentation(PCB* ready_queue, int num_proc, int page_size){
+    int totalfrag =0;
+    for(int i =0; i<num_proc ;i++){
+        int lastpage = ready_queue[i].procsize % page_size; //modulo of size of process with size of page will give size of last page
+        if(lastpage>0){
+            totalfrag += page_size-lastpage; //pagesize - lastpagesize will give the fragmentation for the process
+        }
+    }
+    return totalfrag;
+}
+
+void memdump(PCB* ready_queue, int page_size,int numproc){
+    printf("MEMORY DUMP\n");
+    for(int i=0; i<numproc;i++){
+        printf("PROCESS %d\n", i+1);
+        int numpages = (ready_queue[i].procsize+page_size-1)/page_size;
+        printf("numpages %d\n", numpages);
+        for(int j=0;j<numpages;j++){
+            printf("VPN %d, PFN %d\n",j, ready_queue[i].pagetable[j].frame_num);
+        }
+    }
+}
 
 int main(int argc, char* argv[]){
     if(argc<5){
@@ -113,23 +140,25 @@ int main(int argc, char* argv[]){
 
     PCB* ready_queue  = malloc(num_proc*sizeof(PCB)); //list for PCBs
     int numframes = mem_size/page_size; 
-    // int numframes = 120; 
-
     printf("Number of physical frames = %d\n",numframes);
-    // int* framelist = malloc(sizeof(int)*numframes);
+
+    //STORING PHYSICAL FRAMES
     int framelist[numframes];
     for(int i=0; i<numframes; i++){
-        framelist[i]=1;
+        framelist[i]=1; //all frames assigned 1 initially meaning all of them are free
     }
 
-     
-    // for(int i= 4; i < argc; i++){
-        //iterate on processes
+    //LOADING PROCESS
+    for(int i = 0; i+4<argc; i++){
+        printf("Loading process %d\n",i+1);
+        load_process(argv[i+4], page_size, &ready_queue[i], framelist, numframes);
+    }
 
-    // }
 
-    // printf("FILE PATH: %s\n", argv[4]);
-    load_process(argv[4], page_size, &ready_queue[0], framelist, numframes);
+    memdump(ready_queue,page_size, num_proc);
+    printf("OUT OF MEM DUMP\n");
+    displayFreeFrames(framelist, numframes);
+    // calculateFragmentation(&ready_queue, num_proc, page_size);
     
     return 0;
 }
