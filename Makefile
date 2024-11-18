@@ -1,4 +1,6 @@
 build:
 	gcc -o paging paging.c
 run:
-	./paging
+	./paging $(ARGS)
+clean:
+	rm -f paging

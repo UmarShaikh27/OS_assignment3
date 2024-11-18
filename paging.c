@@ -4,17 +4,13 @@
 #include <stdint.h> //for uint ints
 #include <string.h>
 
+//PAGE TABLE ENTRY
 typedef struct{
     int frame_num;
     int valid;
 } PTE;
 
-// typedef struct
-// {
-//     PTE* entries;
-//     int num_pages;
-// } pageTable;
-
+//PROCESS CONTROL BLOCK
 typedef struct{
     int procid;
     int procsize;
@@ -22,21 +18,24 @@ typedef struct{
     PTE* pagetable;
 } PCB;
 
+//helper function to find the first available frame from the list of physical frames
 int findframe(int *framelist,int numframes){
     for(int i=0;i<numframes;i++){
         if(framelist[i] == 1){
-            return i;
+            return i; //return frame number when found
         }
     }
-    return -1; //ERROR
+    return -1; //ERROR : all frames occupied
 }
 
+//function to create page table and allocate frames
 void load_process(char* filename, int pagesize, PCB* proc, int framelist[], int numframes){
+
     //OPEN THE FILE
     FILE *procfile = fopen(filename, "rb"); //rb means reading file in binary mode
     if(!procfile){
-        perror("Error opening file");
-        exit(EXIT_FAILURE);
+        printf("Error opening the file : %s\n",filename);
+        return; // dont proceed with loading this process 
     }
 
     //FILE CONTENTS
@@ -47,15 +46,14 @@ void load_process(char* filename, int pagesize, PCB* proc, int framelist[], int 
     uint8_t *data_seg = malloc(sizeof(uint8_t)*datasize);
     uint8_t end;
 
-    //RETRIEVING FILE CONTENT
+    //RETRIEVING FILE CONTENTS
     fread(&procid,sizeof(uint8_t), 1, procfile);
-
     fread(&codesize,sizeof(uint16_t), 1, procfile);
-    codesize = ntohs(codesize);
+    codesize = ntohs(codesize); //conversion from big endian
     fread(code_seg,sizeof(uint8_t), codesize, procfile);
 
     fread(&datasize,sizeof(uint16_t), 1, procfile);
-    datasize = ntohs(datasize);
+    datasize = ntohs(datasize); //conversion from big endian
     fread(data_seg,sizeof(uint8_t), datasize, procfile);
 
     fread(&end,sizeof(uint8_t), 1, procfile);
@@ -73,11 +71,8 @@ void load_process(char* filename, int pagesize, PCB* proc, int framelist[], int 
     //FILL CONTENT IN PCB
     proc->procid = procid;
     proc->procsize = codesize+datasize;
-
     int numpages = (proc->procsize+pagesize-1)/pagesize; //pagesize-1 added to ensure partial pages are also catered
-    printf("Number of pages: %d\n", numpages);
     proc->pagetable = malloc(sizeof(PTE)*numpages);
-    // printf("Page table allocated\n");
 
     for(int i=0; i<numpages; i++){
         int frame = findframe(framelist,numframes);
@@ -91,22 +86,29 @@ void load_process(char* filename, int pagesize, PCB* proc, int framelist[], int 
     }
 
     //PRINT CHECKS
-    // printf("Process id: %u\n", (unsigned int)procid);
-    // printf("Code size: %u\n" ,(unsigned int)codesize);
+    printf("Loaded process => Process id: %u\n", (unsigned int)procid);
+    printf("-----Number of pages: %d\n", numpages);
+    printf("-----Process Size: %u\n" ,(unsigned int)(codesize+datasize));
     // printf("Process size : %u\n",(unsigned int)datasize);
+
+    //FREE MEMORY
+    free(code_seg);
+    free(data_seg);
     
 }
 
 void displayFreeFrames(int *framelist, int numFrames) {
-    printf("FREE FRAMES: ");
+    printf("========FREE FRAME LIST========\n");
+    printf("Free Frames: \n[");
     for (int i=0; i< numFrames; i++){
         if(framelist[i] == 1) printf("%d ", i);
     }
-    printf("\n");
+    printf("]\n\n");
 }
 
 //FUNCTION TO RETURN THE TOTAL FRAGMENTATION OF ALL PROCESSES COMBINED
 int calculateFragmentation(PCB* ready_queue, int num_proc, int page_size){
+    printf("========FRAGMENTATION========\n");
     int totalfrag =0;
     for(int i =0; i<num_proc ;i++){
         int lastpage = ready_queue[i].procsize % page_size; //modulo of size of process with size of page will give size of last page
@@ -117,30 +119,51 @@ int calculateFragmentation(PCB* ready_queue, int num_proc, int page_size){
     return totalfrag;
 }
 
+//FUNCTION TO PRINT ALL PAGE TABLE ENTRIES FOR EACH PROCESS
 void memdump(PCB* ready_queue, int page_size,int numproc){
-    printf("MEMORY DUMP\n");
-    for(int i=0; i<numproc;i++){
-        printf("PROCESS %d\n", i+1);
-        int numpages = (ready_queue[i].procsize+page_size-1)/page_size;
-        printf("numpages %d\n", numpages);
-        for(int j=0;j<numpages;j++){
-            printf("VPN %d, PFN %d\n",j, ready_queue[i].pagetable[j].frame_num);
+    printf("========MEMORY DUMP========\n");
+    for(int i=0; i<numproc;i++){ //loop for processes
+        printf("---PROCESS %d---\n", i+1);
+        int numpages = (ready_queue[i].procsize+page_size-1)/page_size; 
+        printf("Number of Pages = %d\n", numpages);
+        for(int j=0;j<numpages;j++){ //loop for pages
+            printf("VPN %d | PFN %d\n",j, ready_queue[i].pagetable[j].frame_num);
         }
     }
+    printf("\n");//break
+}
+
+//HELPER TO CHECK WHETHER THE FILE IS .proc OR NOT
+int has_proc_extension(const char *filename) {
+    const char *ext = strrchr(filename, '.'); // Find the last '.' in the string
+    return (ext != NULL && strcmp(ext, ".proc") == 0);
 }
 
 int main(int argc, char* argv[]){
+    //-----------ERROR HANDLING-----------
     if(argc<5){
-        printf("Usage: %s <physical mem size> <address space size> <page size> <list of processes>", argv[0]);
+        printf("USAGE: make run ARGS=\"<physical mem size> <address space size> <page size> 'path1' 'path2'...'pathn'\"\n");
+        printf("OR\n");
+        printf("Usage: %s <physical mem size> <address space size> <page size> <list of processes>\n", argv[0]);
+        exit(EXIT_FAILURE);//exit function
     }
+    for (int i = 4; i < argc; i++) {
+        if (!has_proc_extension(argv[i])) {
+            printf("Error: Argument '%s' is not a .proc file.\n", argv[i]);
+            return EXIT_FAILURE;
+        }
+    }
+
+    //--------RETRIEVE GIVEN DATA------------
     int mem_size = atoi(argv[1]);
     int log_space_bits = atoi(argv[2]);
     int page_size = atoi(argv[3]);
-    int num_proc = argc-4; //number of processes
 
+    //INITIALIZING READY QUEUE
+    int num_proc = argc-4; //number of processes
     PCB* ready_queue  = malloc(num_proc*sizeof(PCB)); //list for PCBs
-    int numframes = mem_size/page_size; 
-    printf("Number of physical frames = %d\n",numframes);
+    int numframes = mem_size/page_size; //number of frames
+    
 
     //STORING PHYSICAL FRAMES
     int framelist[numframes];
@@ -149,16 +172,27 @@ int main(int argc, char* argv[]){
     }
 
     //LOADING PROCESS
+    printf("========PROCESSES LOADING========\n");
     for(int i = 0; i+4<argc; i++){
-        printf("Loading process %d\n",i+1);
-        load_process(argv[i+4], page_size, &ready_queue[i], framelist, numframes);
+        printf("Loading process %d...\n",i+1);
+        load_process(argv[i+4], page_size, &ready_queue[i], framelist, numframes); //loadprocess called on every file 
     }
+    printf("\n"); //BREAK
 
+    //DISPLAYING OUTPUTS
+    memdump(ready_queue,page_size, num_proc); //page table prints
+    displayFreeFrames(framelist, numframes); //displaying free frames remaining
+    int frag = calculateFragmentation(ready_queue, num_proc, page_size); //displaying fragmentation
+    printf("Total Fragmentation is: %d\n", frag);
 
-    memdump(ready_queue,page_size, num_proc);
-    printf("OUT OF MEM DUMP\n");
-    displayFreeFrames(framelist, numframes);
-    // calculateFragmentation(&ready_queue, num_proc, page_size);
+    //FREE DYNAMIC MEMORY ALLOCATION
+    //page tables
+    for (int i = 0; i < num_proc; i++) {
+        free(ready_queue[i].pagetable);
+    }
+    //ready queue
+    free(ready_queue);
+
     
     return 0;
 }
